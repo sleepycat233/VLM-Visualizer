@@ -29,10 +29,15 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
     if device != "cuda":
         kwargs['device_map'] = {"": device}
 
+    # Remove any conflicting quantization parameters from kwargs to avoid conflicts
+    kwargs.pop('load_in_4bit', None)
+    kwargs.pop('load_in_8bit', None)
+    kwargs.pop('quantization_config', None)
+
     if load_8bit:
         kwargs['load_in_8bit'] = True
     elif load_4bit:
-        kwargs['load_in_4bit'] = True
+        # Only set quantization_config, not load_in_4bit (to avoid conflict)
         kwargs['quantization_config'] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,

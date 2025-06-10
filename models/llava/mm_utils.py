@@ -7,6 +7,7 @@ import ast
 
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
+from llava.model.constants import OBJS_TOKEN_LIST, OBJS_PROCESS_FUNCS, DEFAULT_OBJS_TOKEN
 
 
 def select_best_resolution(original_size, possible_resolutions):
@@ -164,23 +165,62 @@ def expand2square(pil_img, background_color):
 
 
 def process_images(images, image_processor, model_cfg):
+    """
+    Process a list of PIL images, preparing them for the LLaVA model.
+
+    This function handles image preprocessing, especially aspect ratio management,
+    by padding images to a square shape before running them through the standard
+    image processor. This ensures that the image content is not distorted.
+
+    Args:
+        images (list[PIL.Image.Image]): A list of PIL Image objects to process.
+        image_processor: The image processor associated with the model,
+                         responsible for resizing, normalization, and tensor conversion.
+        model_cfg: The model's configuration, which contains parameters like
+                   the desired image aspect ratio handling strategy.
+
+    Returns:
+        tuple: A tuple containing:
+            - new_images (torch.Tensor): A batch of processed image tensors ready for the model.
+            - new_raw_images (list[PIL.Image.Image]): A list of images after padding but before
+                                                     normalization and tensor conversion, useful for visualization.
+    """
+    # Get the aspect ratio handling strategy from the model configuration.
+    # For LLaVA v1.5, this is typically 'pad'.
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
     new_raw_images = []
     new_images = []
+    abkj
+
+    # This is the standard strategy for LLaVA v1.5.
+    # It avoids image distortion by padding non-square images to become square.
     if image_aspect_ratio == 'pad':
         for image in images:
+            # The `expand2square` function pads the image to a square.
+            # It calculates the shorter side and adds padding (colored with the image_mean)
+            # to make it equal to the longer side.
             image = expand2square(image, tuple(int(x*255) for x in image_processor.image_mean))
             new_raw_images.append(image)
+
+            # The standard image processor now takes the squared image and performs:
+            # 1. Resizing to the model's expected input size (e.g., 336x336).
+            # 2. Normalizing the pixel values.
+            # 3. Converting the image to a PyTorch tensor.
             image = image_processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
             new_images.append(image)
     elif image_aspect_ratio == "anyres":
+        # This project does not support the 'anyres' strategy used by newer models.
         raise NotImplementedError("Not supported yet by the visualization")
         for image in images:
             image = process_anyres_image(image, image_processor, model_cfg.image_grid_pinpoints)
             new_images.append(image)
     else:
+        # If the strategy is something else or not specified, it's not supported.
         raise NotImplementedError("Not supported yet by the visualization")
         return image_processor(images, return_tensors='pt')['pixel_values']
+
+    # If all processed images have the same shape, stack them into a single batch tensor.
+    # This allows the model to process multiple images at once.
     if all(x.shape == new_images[0].shape for x in new_images):
         new_images = torch.stack(new_images, dim=0)
     return new_images, new_raw_images
@@ -230,7 +270,7 @@ class KeywordsStoppingCriteria(StoppingCriteria):
             self.keyword_ids.append(torch.tensor(cur_keyword_ids))
         self.tokenizer = tokenizer
         self.start_len = input_ids.shape[1]
-    
+
     def call_for_batch(self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
         offset = min(output_ids.shape[1] - self.start_len, self.max_keyword_len)
         self.keyword_ids = [keyword_id.to(output_ids.device) for keyword_id in self.keyword_ids]
@@ -243,7 +283,7 @@ class KeywordsStoppingCriteria(StoppingCriteria):
             if keyword in outputs:
                 return True
         return False
-    
+
     def __call__(self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
         outputs = []
         for i in range(output_ids.shape[0]):
