@@ -7,7 +7,6 @@ import ast
 
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
-from llava.model.constants import OBJS_TOKEN_LIST, OBJS_PROCESS_FUNCS, DEFAULT_OBJS_TOKEN
 
 
 def select_best_resolution(original_size, possible_resolutions):
@@ -190,7 +189,6 @@ def process_images(images, image_processor, model_cfg):
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
     new_raw_images = []
     new_images = []
-    abkj
 
     # This is the standard strategy for LLaVA v1.5.
     # It avoids image distortion by padding non-square images to become square.
